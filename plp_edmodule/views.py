@@ -196,8 +196,8 @@ def update_course_details_context(context, user):
         obj = course_set_attrs(context['object'])
         context.update({
             'object': obj,
-            'authors': u', '.join([i.title for i in authors]),
-            'partners': u', '.join([i.title for i in partners]),
+            'authors': authors,
+            'partners': partners,
             'authors_and_partners': authors + partners,
             'profits': [i.strip() for i in profits.splitlines() if i.strip()],
             'schedule': course_extended.themes,
@@ -381,7 +381,7 @@ def edmodule_catalog_view(request, category=None):
         max_length = CourseExtendedParameters._meta.get_field('short_description').max_length
         default_desc = strip_tags(strip_spaces_between_tags(c.description or ''))
         dic.update({
-            'authors_and_partners': [{'url': i.link, 'title': i.abbr or i.title} for i in c.get_authors_and_partners()],
+            'authors_and_partners': [{'url': i.get_absolute_url, 'title': i.abbr or i.title} for i in c.get_authors_and_partners()],
             'catalog_marker': getattr(c, 'catalog_marker', ''),
             'short_description': getattr(c, 'short_description', '') or Truncator(default_desc).chars(max_length),
         })
