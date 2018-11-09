@@ -8,7 +8,6 @@ from collections import defaultdict
 from django.conf import settings
 from django.db.models import Count
 from django.contrib.contenttypes.models import ContentType
-from django.core.exceptions import ObjectDoesNotExist
 from django.core.files.storage import default_storage
 from django.core.urlresolvers import reverse
 from django.http import JsonResponse, Http404
@@ -18,17 +17,14 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.utils.html import strip_tags, strip_spaces_between_tags
 from django.utils.text import Truncator
-from django.utils.translation import ugettext as _
 from django.views.decorators.cache import cache_page
 from plp.models import HonorCode, CourseSession, Course, Participant, EnrollmentReason, SessionEnrollmentType, Instructor
 from plp.utils.edx_enrollment import EDXEnrollmentError
-from plp.utils.webhook import ZapierInformer
 from plp.views.course import _enroll
 from plp_extension.apps.course_extension.models import CourseExtendedParameters, Category, CourseCreator
-from specproject.models import SpecProject
 from .models import (
     EducationalModule, EducationalModuleEnrollment, PUBLISHED, HIDDEN, EducationalModuleEnrollmentReason,
-    BenefitLink, CoursePromotion, EducationalModuleEnrollmentType)
+    BenefitLink, CoursePromotion)
 from .utils import (update_module_enrollment_progress, client, get_feedback_list, course_set_attrs, get_status_dict,
     count_user_score, update_modules_graduation, choose_closest_session)
 from .signals import edmodule_enrolled
@@ -110,29 +106,10 @@ def module_page(request, code):
     # TODO: catalog_link
     # catalog_link = reverse('modules_catalog') + '?' + '&'.join(['cat=%s' % i.code for i in module.categories])
     catalog_link = ''
-    upsale_links = []
-    if getattr(settings, 'ENABLE_OPRO_PAYMENTS', False):
-        from opro_payments.models import UpsaleLink
-        upsale_links = UpsaleLink.objects.filter(
-            object_id=module.id,
-            content_type=ContentType.objects.get_for_model(module),
-            is_active=True,
-        ).select_related('upsale')
     try:
         session, price = module.get_first_session_to_buy(request.user)
     except TypeError:
         session, price = None, None
-    try:
-        verified = EducationalModuleEnrollmentType.objects.get(module=module, active=True, mode='verified')
-    except ObjectDoesNotExist:
-        raise Exception("No price for education module with id={}".format(module.id))
-
-    price_data = module.get_price_list(request.user)
-    try:
-        verified_discount = '%.2f' % round(100 - float(verified.price) / float(price_data['price']) * 100, 2)
-    except ZeroDivisionError:
-        verified_discount = 0
-
     return render(request, 'edmodule/edmodule_page.html', {
         'object': module,
         'courses': [course_set_attrs(i) for i in module.courses.all()],
@@ -141,7 +118,7 @@ def module_page(request, code):
         'authors_and_partners': module.get_authors_and_partners(),
         'profits': module.get_module_profit(),
         'related': module.get_related(),
-        'price_data': price_data,
+        'price_data': module.get_price_list(request.user),
         'schedule': module.get_schedule(),
         'rating': module.get_rating(),
         'count_ratings': module.count_ratings,
@@ -150,13 +127,10 @@ def module_page(request, code):
         'feedback_list': get_feedback_list(module),
         'instructors': module.instructors,
         'authenticated': request.user.is_authenticated(),
-        'upsale_links': upsale_links,
         'enrollment_reason': module.get_enrollment_reason_for_user(request.user),
         'first_session': session,
         'first_session_price': price,
         'benefit_links': BenefitLink.get_benefits_for_object(module),
-        'verified_price': verified.price,
-        'verified_discount': verified_discount
     })
 
 
@@ -216,34 +190,10 @@ def update_context_with_modules(context, user):
     current = context['courses_current']
     finished = context['courses_finished']
     future = context['courses_feature']
-    upsales_for_session = defaultdict(list)
-    upsales_for_module = defaultdict(list)
     obj_enrollments_for_session = defaultdict(list)
     obj_enrollments_for_module = defaultdict(list)
     modules_courses_ids = list(modules.values_list('courses__course_sessions__id', flat=True))
     modules_courses_ids = filter(lambda x: x, modules_courses_ids)
-    if getattr(settings, 'ENABLE_OPRO_PAYMENTS', False):
-        from opro_payments.models import UpsaleLink, ObjectEnrollment
-        course_ids = [i.id for i in (finished + future + current)]
-        course_ids = list(set(course_ids).union(set(modules_courses_ids)))
-        ctype = ContentType.objects.get_for_model(CourseSession)
-        ctype_module = ContentType.objects.get_for_model(EducationalModule)
-        upsale_links = UpsaleLink.objects.filter(content_type=ctype, object_id__in=course_ids, is_active=True)
-        module_upsale_links = UpsaleLink.objects.filter(content_type=ctype_module,
-                                                        object_id__in=[i.id for i in modules], is_active=True)
-        for i in upsale_links:
-            upsales_for_session[i.object_id].append(i)
-        for i in module_upsale_links:
-            upsales_for_module[i.object_id].append(i)
-        obj_enrollments = ObjectEnrollment.objects.filter(upsale__in=upsale_links, user=user).select_related('upsale')
-        module_obj_enrollments = ObjectEnrollment.objects.filter(upsale__in=module_upsale_links, user=user).select_related('upsale')
-        for i in obj_enrollments:
-            obj_enrollments_for_session[i.upsale.object_id].append(i.upsale)
-        for i in module_obj_enrollments:
-            obj_enrollments_for_module[i.upsale.object_id].append(i.upsale)
-    for i in (current + future + finished):
-        i.upsales = upsales_for_session.get(i.id)
-        i.bought_upsales = obj_enrollments_for_session.get(i.id)
     sessions_for_course = defaultdict(list)
     available_sessions_for_course = defaultdict(list)
     for cs in CourseSession.objects.filter(id__in=modules_courses_ids).order_by('datetime_starts'):
@@ -266,22 +216,15 @@ def update_context_with_modules(context, user):
         'courses_feature': future[:]
     }
     update_modules_graduation(user, context['courses_finished'])
-
-    special_modules = [i.lower() for i in getattr(settings, 'EDMODULE_WITH_WARNING', [])]
-    warning_msg = getattr(settings, 'EDMODULE_WARNING_MSG',
-                          _(u'Записывайтесь на курс только после того, как завершили предыдущий'))
     for module in context['modules']:
         all_courses = module.courses.all()
         module.all_courses = zip(all_courses, [c.next_session for c in all_courses])
-        module.upsales = upsales_for_module.get(module.id, [])
-        module.bought_upsales = obj_enrollments_for_module.get(module.id, [])
         for attr in ['courses_current', 'courses_finished', 'courses_feature']:
             setattr(module, attr, [])
         for index, (course, __) in enumerate(module.all_courses, 1):
             course.available_sessions = available_sessions_for_course[course.id]
             course.index = index
             course.has_module = True
-            enrolled_for_course = False
             for session in sessions_for_course[course.id]:
                 session.participant = participant_for_session.get(session.id)
                 session.paid_enrollment = paid_enrollment_for_session.get(session.id)
@@ -291,16 +234,9 @@ def update_context_with_modules(context, user):
                     session.has_honor_mode = bool(session.honor_mode_enrollment_type)
                 else:
                     session.has_honor_mode = True
-                session.upsales = upsales_for_session.get(session.id)
-                session.bought_upsales = obj_enrollments_for_session.get(session.id)
                 if session.participant:
                     _assign_module_tab(module, session, course)
                     _remove_duplicates(session, without_duplicates.values())
-                    enrolled_for_course = True
-            # SUPP-128
-            if module.code.lower() in special_modules and not enrolled_for_course and index > 1:
-                course.show_special_message = warning_msg
-
     all_courses = reduce(lambda x, y: x + y, without_duplicates.values(), [])
     without_duplicates['all_courses'] = all_courses
     context.update(without_duplicates)
@@ -311,31 +247,8 @@ def update_context_with_modules(context, user):
     for attr in without_duplicates.keys():
         counters[attr] = len(context[attr])
         counters[attr] += sum([len(getattr(m, attr)) for m in modules])
-    RelCourse = Course._meta.get_field('spec_projects').rel.through
-    RelEdModule = EducationalModule._meta.get_field('spec_projects').rel.through
-    specproject_for_course = {}
-    specprojects = {i.id: i for i in SpecProject.objects.all()}
-    for item in RelCourse.objects.filter(course_id__in=[i.course_id for i in all_courses]).order_by('specproject_id'):
-        if item.course_id not in specproject_for_course:
-            specproject_for_course[item.course_id] = specprojects[item.specproject_id]
-    specproject_for_module = {}
-    for item in RelEdModule.objects.filter(educationalmodule__in=modules).order_by('specproject_id'):
-        if item.educationalmodule_id not in specproject_for_module:
-            specproject_for_module[item.educationalmodule_id] = specprojects[item.specproject_id]
     modules = list(modules)
     specprojects_data = {}
-    for m in modules[:]:
-        sp = specproject_for_module.get(m.id)
-        if sp:
-            modules.remove(m)
-            specprojects_data.setdefault(sp, {}).setdefault('modules', []).append(m)
-    for title, courses in without_duplicates.items():
-        copy_courses = courses[:]
-        for c in copy_courses:
-            sp = specproject_for_course.get(c.course_id)
-            if sp:
-                courses.remove(c)
-                specprojects_data.setdefault(sp, {}).setdefault('courses', {}).setdefault(title, []).append(c)
     context['counters'] = counters
     context.update({
         'modules': modules,
@@ -360,12 +273,6 @@ def update_course_details_context(context, user):
     modules = EducationalModule.objects.filter(courses=context['object']).distinct()
     context['modules'] = modules
     session = context['session']
-    if session and getattr(settings, 'ENABLE_OPRO_PAYMENTS', False):
-        from opro_payments.models import UpsaleLink
-        ctype = ContentType.objects.get_for_model(session)
-        upsale_links = UpsaleLink.objects.filter(content_type=ctype, object_id=session.id, is_active=True)\
-            .select_related('upsale')
-        context.update({'upsale_links': upsale_links})
     try:
         course_extended = context['object'].extended_params
         authors = list(course_extended.authors.all())
@@ -412,15 +319,7 @@ def get_promoted_courses(limit=None, sp=None):
     :param limit: int максимум элементов
     :return: [{'type': 'em'/'course', 'item': Course/EducationalModule}, ...]
     """
-    qs = CoursePromotion.objects.filter(spec_project=sp)
     items = []
-    for item in qs:
-        if limit is not None and len(items) == limit:
-            break
-        obj = item.content_object
-        if obj:
-            item_type = 'em' if isinstance(obj, EducationalModule) else 'course'
-            items.append({'type': item_type, 'item': obj if item_type == 'em' else course_set_attrs(obj)})
     return items
 
 
@@ -429,10 +328,6 @@ def update_frontpage_context(context, request):
     Обновление контекста для главной страницы
     """
     sp = None
-    if request.subdomain:
-        sp = SpecProject.get_by_subdomain(request.subdomain)
-        if not sp:
-            raise Http404
     CNT_COURSES = 5
     objects = get_promoted_courses(CNT_COURSES, sp)
     objects_ids = []
@@ -447,8 +342,6 @@ def update_frontpage_context(context, request):
         datetime_start_enroll__lt=now,
         datetime_end_enroll__gt=now,
     ).values_list('course__id', flat=True).distinct()
-    if sp:
-        course_ids = course_ids.filter(course__spec_projects=sp)
     by_category, by_category_dpo = {}, {}
     for c in Category.objects.all():
         by_category[c.id] = list(CourseExtendedParameters.objects.filter(
@@ -463,8 +356,6 @@ def update_frontpage_context(context, request):
             status=PUBLISHED,
             courses__id__in=ids,
         ).prefetch_related('courses')
-        if sp:
-            modules = modules.filter(spec_projects=sp)
         added_module = False
         for m in modules:
             if m.may_enroll() and ('em', m.id) not in objects_ids:
@@ -484,8 +375,6 @@ def update_frontpage_context(context, request):
     if num_to_add:
         added = [i[1] for i in objects_ids]
         qs = Course.objects.filter(status=PUBLISHED).exclude(id__in=added)
-        if sp:
-            qs = qs.filter(spec_projects=sp)
         for c in qs.order_by('?')[:num_to_add]:
             objects.append({'type': 'course', 'item': course_set_attrs(c)})
 
@@ -498,8 +387,6 @@ def update_frontpage_context(context, request):
             status=PUBLISHED,
             courses__in=ids,
         ).prefetch_related('courses')
-        if sp:
-            modules = modules.filter(spec_projects=sp)
         added_module = False
         for m in modules:
             if m.may_enroll() and ('em', m.id) not in objects_dpo_ids:
@@ -574,10 +461,6 @@ def edmodule_catalog_view(request, category=None):
     module_covers: аналогично course_covers
     """
     sp = None
-    if request.subdomain:
-        sp = SpecProject.get_by_subdomain(request.subdomain)
-        if not sp:
-            raise Http404
 
     courses, modules, course_covers, module_covers = {}, {}, {}, {}
     cover_path = Course._meta.get_field('cover').upload_to
@@ -600,8 +483,6 @@ def edmodule_catalog_view(request, category=None):
     category_slugs_with_having_courses = set()
     courses_query = Course.objects.filter(status='published').prefetch_related(
         'extended_params', 'extended_params__authors', 'course_sessions').distinct()
-    if sp:
-        courses_query = courses_query.filter(spec_projects=sp)
     # if not category:
     #     courses_query = Course.objects.filter(status='published').prefetch_related(
     #         'extended_params', 'extended_params__authors', 'course_sessions').distinct()
@@ -643,8 +524,6 @@ def edmodule_catalog_view(request, category=None):
     count_courses_dict = dict(EducationalModule.objects.annotate(cnt=Count('courses')).values_list('code', 'cnt'))
     edmodule_query = EducationalModule.objects.filter(status='published').\
         select_related('extended_params')
-    if sp:
-        edmodule_query = edmodule_query.filter(spec_projects=sp)
     for m in edmodule_query:
         if m.cover:
             cover_name = os.path.split(m.cover.name)[-1]
@@ -686,7 +565,7 @@ def edmodule_catalog_view(request, category=None):
 
 def enroll_on_course(session, request):
     """
-    обработка стандартного метода записи на курс для openprofession
+    обработка стандартного метода записи на курс
     """
     def _add_verified_entry(participant, verified_type):
         try:
@@ -699,9 +578,6 @@ def enroll_on_course(session, request):
             return JsonResponse({'status': 1})
         except EDXEnrollmentError:
             return JsonResponse({'status': 0, 'error': 'edx error'})
-        finally:
-            ZapierInformer().push(ZapierInformer.ACTION.plp_course_enroll, request=request, session=session,
-                                  participant_id=participant.id)
 
     enrs = EducationalModuleEnrollment.objects.filter(user=request.user,
                                                       module__courses=session.course,
@@ -743,8 +619,6 @@ def enroll_on_course(session, request):
             if verified:
                 # если надо записать в verified mode
                 return _add_verified_entry(participant, verified_type)
-            ZapierInformer().push(ZapierInformer.ACTION.plp_course_enroll, request=request, session=session,
-                                  participant_id=participant.id)
             return JsonResponse({'status': 1})
 
 
