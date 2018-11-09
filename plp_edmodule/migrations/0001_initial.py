@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 from django.db import models, migrations
 import jsonfield.fields
@@ -42,8 +42,8 @@ class Migration(migrations.Migration):
                 ('is_active', models.BooleanField(default=False)),
                 ('_ctime', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('module', models.ForeignKey(verbose_name='\u041e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0439 \u043c\u043e\u0434\u0443\u043b\u044c', to='plp_edmodule.EducationalModule')),
-                ('user', models.ForeignKey(verbose_name='\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c', to=settings.AUTH_USER_MODEL)),
+                ('module', models.ForeignKey(verbose_name='\u041e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0439 \u043c\u043e\u0434\u0443\u043b\u044c', to='plp_edmodule.EducationalModule', on_delete=models.CASCADE)),
+                ('user', models.ForeignKey(verbose_name='\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c', to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE)),
             ],
             options={
                 'verbose_name': '\u0417\u0430\u043f\u0438\u0441\u044c \u043d\u0430 \u043c\u043e\u0434\u0443\u043b\u044c',
@@ -58,7 +58,7 @@ class Migration(migrations.Migration):
                 ('payment_order_id', models.CharField(help_text='\u041d\u043e\u043c\u0435\u0440 \u0434\u043e\u0433\u043e\u0432\u043e\u0440\u0430 (\u0434\u043b\u044f \u044f\u043d\u0434\u0435\u043a\u0441-\u043a\u0430\u0441\u0441\u044b - \u043f\u043e\u043b\u0435 order_number)', max_length=64, null=True, verbose_name='\u041d\u043e\u043c\u0435\u0440 \u0434\u043e\u0433\u043e\u0432\u043e\u0440\u0430', blank=True)),
                 ('payment_descriptions', models.TextField(help_text='\u041a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439 \u043a \u043f\u043b\u0430\u0442\u0435\u0436\u0443', null=True, verbose_name='\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u043f\u043b\u0430\u0442\u0435\u0436\u0430', blank=True)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('enrollment', models.ForeignKey(related_name='enrollment_reason', verbose_name='\u0417\u0430\u043f\u0438\u0441\u044c \u043d\u0430 \u043c\u043e\u0434\u0443\u043b\u044c', to='plp_edmodule.EducationalModuleEnrollment')),
+                ('enrollment', models.ForeignKey(related_name='enrollment_reason', verbose_name='\u0417\u0430\u043f\u0438\u0441\u044c \u043d\u0430 \u043c\u043e\u0434\u0443\u043b\u044c', to='plp_edmodule.EducationalModuleEnrollment', on_delete=models.CASCADE)),
             ],
             options={
                 'verbose_name': '\u041f\u0440\u0438\u0447\u0438\u043d\u0430 \u0437\u0430\u043f\u0438\u0441\u0438',
@@ -76,7 +76,7 @@ class Migration(migrations.Migration):
                 ('price', models.PositiveIntegerField(default=0, verbose_name='\u0421\u0442\u043e\u0438\u043c\u043e\u0441\u0442\u044c')),
                 ('about', models.TextField(verbose_name='\u041a\u0440\u0430\u0442\u043a\u043e\u0435 \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435', blank=True)),
                 ('description', models.TextField(verbose_name='\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435', blank=True)),
-                ('module', models.ForeignKey(verbose_name='\u041e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0439 \u043c\u043e\u0434\u0443\u043b\u044c', to='plp_edmodule.EducationalModule')),
+                ('module', models.ForeignKey(verbose_name='\u041e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0439 \u043c\u043e\u0434\u0443\u043b\u044c', to='plp_edmodule.EducationalModule', on_delete=models.CASCADE)),
             ],
             options={
                 'verbose_name': '\u0412\u0430\u0440\u0438\u0430\u043d\u0442 \u043f\u0440\u043e\u0445\u043e\u0436\u0434\u0435\u043d\u0438\u044f \u043c\u043e\u0434\u0443\u043b\u044f',
@@ -89,7 +89,7 @@ class Migration(migrations.Migration):
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('progress', jsonfield.fields.JSONField(null=True, verbose_name='\u041f\u0440\u043e\u0433\u0440\u0435\u0441\u0441')),
                 ('updated_at', models.DateTimeField(auto_now=True, verbose_name='\u0412\u0440\u0435\u043c\u044f \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0435\u0433\u043e \u043e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u044f \u043a edx')),
-                ('enrollment', models.OneToOneField(related_name='progress', verbose_name='\u0417\u0430\u043f\u0438\u0441\u044c \u043d\u0430 \u043c\u043e\u0434\u0443\u043b\u044c', to='plp_edmodule.EducationalModuleEnrollment')),
+                ('enrollment', models.OneToOneField(related_name='progress', verbose_name='\u0417\u0430\u043f\u0438\u0441\u044c \u043d\u0430 \u043c\u043e\u0434\u0443\u043b\u044c', to='plp_edmodule.EducationalModuleEnrollment', on_delete=models.CASCADE)),
             ],
             options={
                 'verbose_name': '\u041f\u0440\u043e\u0433\u0440\u0435\u0441\u0441 \u043f\u043e \u043c\u043e\u0434\u0443\u043b\u044e',
@@ -110,8 +110,8 @@ class Migration(migrations.Migration):
                 ('status', models.CharField(default=b'published', max_length=15, verbose_name='\u0421\u0442\u0430\u0442\u0443\u0441', choices=[(b'published', '\u041e\u043f\u0443\u0431\u043b\u0438\u043a\u043e\u0432\u0430\u043d\u043e'), (b'waiting', '\u041e\u0436\u0438\u0434\u0430\u043d\u0438\u0435')])),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('content_type', models.ForeignKey(verbose_name='\u0422\u0438\u043f \u043e\u0431\u044a\u0435\u043a\u0442\u0430 \u043e\u0442\u0437\u044b\u0432\u0430', to='contenttypes.ContentType')),
-                ('user', models.ForeignKey(verbose_name='\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c', to=settings.AUTH_USER_MODEL)),
+                ('content_type', models.ForeignKey(verbose_name='\u0422\u0438\u043f \u043e\u0431\u044a\u0435\u043a\u0442\u0430 \u043e\u0442\u0437\u044b\u0432\u0430', to='contenttypes.ContentType', on_delete=models.CASCADE)),
+                ('user', models.ForeignKey(verbose_name='\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c', to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE)),
             ],
             options={
                 'verbose_name': '\u041e\u0442\u0437\u044b\u0432 \u043e \u043c\u043e\u0434\u0443\u043b\u0435',
@@ -122,8 +122,8 @@ class Migration(migrations.Migration):
             name='EducationalModuleUnsubscribe',
             fields=[
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
-                ('module', models.ForeignKey(verbose_name='\u041e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0439 \u043c\u043e\u0434\u0443\u043b\u044c', to='plp_edmodule.EducationalModule')),
-                ('user', models.ForeignKey(verbose_name='\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c', to=settings.AUTH_USER_MODEL)),
+                ('module', models.ForeignKey(verbose_name='\u041e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0439 \u043c\u043e\u0434\u0443\u043b\u044c', to='plp_edmodule.EducationalModule', on_delete=models.CASCADE)),
+                ('user', models.ForeignKey(verbose_name='\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c', to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE)),
             ],
             options={
                 'verbose_name': '\u041e\u0442\u043f\u0438\u0441\u043a\u0430 \u043e\u0442 \u0440\u0430\u0441\u0441\u044b\u043b\u043e\u043a \u043e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u043e\u0433\u043e \u043c\u043e\u0434\u0443\u043b\u044f',
@@ -133,7 +133,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='educationalmoduleenrollmentreason',
             name='module_enrollment_type',
-            field=models.ForeignKey(verbose_name='\u0412\u0430\u0440\u0438\u0430\u043d\u0442 \u043f\u0440\u043e\u0445\u043e\u0436\u0434\u0435\u043d\u0438\u044f \u043c\u043e\u0434\u0443\u043b\u044f', to='plp_edmodule.EducationalModuleEnrollmentType'),
+            field=models.ForeignKey(verbose_name='\u0412\u0430\u0440\u0438\u0430\u043d\u0442 \u043f\u0440\u043e\u0445\u043e\u0436\u0434\u0435\u043d\u0438\u044f \u043c\u043e\u0434\u0443\u043b\u044f', to='plp_edmodule.EducationalModuleEnrollmentType', on_delete=models.CASCADE),
         ),
         migrations.AlterUniqueTogether(
             name='educationalmoduleunsubscribe',

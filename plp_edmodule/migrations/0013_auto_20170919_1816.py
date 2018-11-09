@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 from django.db import models, migrations
 
@@ -19,6 +19,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='promocode',
             name='course',
-            field=models.ForeignKey(verbose_name='\u041a\u0443\u0440\u0441', blank=True, to='plp.Course', null=True),
+            field=models.ForeignKey(verbose_name='\u041a\u0443\u0440\u0441', blank=True, to='plp.Course', null=True, on_delete=models.CASCADE),
         ),
     ]

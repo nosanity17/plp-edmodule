@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 from django.db import models, migrations
 import django.core.validators
@@ -31,8 +31,8 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('object_id', models.PositiveIntegerField(verbose_name='\u041e\u0431\u044a\u0435\u043a\u0442, \u043a \u043a\u043e\u0442\u043e\u0440\u043e\u043c\u0443 \u0432\u044b\u0433\u043e\u0434\u0430')),
-                ('benefit', models.ForeignKey(related_name='benefit_links', verbose_name='\u0412\u044b\u0433\u043e\u0434\u0430', to='plp_edmodule.Benefit')),
-                ('content_type', models.ForeignKey(verbose_name='\u0422\u0438\u043f \u043e\u0431\u044a\u0435\u043a\u0442\u0430, \u043a \u043a\u043e\u0442\u043e\u0440\u043e\u043c\u0443 \u0432\u044b\u0433\u043e\u0434\u0430', to='contenttypes.ContentType')),
+                ('benefit', models.ForeignKey(related_name='benefit_links', verbose_name='\u0412\u044b\u0433\u043e\u0434\u0430', to='plp_edmodule.Benefit', on_delete=models.CASCADE)),
+                ('content_type', models.ForeignKey(verbose_name='\u0422\u0438\u043f \u043e\u0431\u044a\u0435\u043a\u0442\u0430, \u043a \u043a\u043e\u0442\u043e\u0440\u043e\u043c\u0443 \u0432\u044b\u0433\u043e\u0434\u0430', to='contenttypes.ContentType', on_delete=models.CASCADE)),
             ],
         ),
     ]

@@ -22,7 +22,7 @@ def enroll_button(context, course, session=None, html_location=None):
     отрисовка кнопки записи для курса
     """
     user = context['request'].user
-    authenticated = user.is_authenticated()
+    authenticated = user.is_authenticated
     if not session:
         session = course.next_session
     status = session.button_status(user) if session else course.button_status(user)

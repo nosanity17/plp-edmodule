@@ -9,11 +9,11 @@ from django.conf import settings
 from django.db.models import Count
 from django.contrib.contenttypes.models import ContentType
 from django.core.files.storage import default_storage
-from django.core.urlresolvers import reverse
 from django.http import JsonResponse, Http404
 from django.views.decorators.http import require_POST, require_GET
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags, strip_spaces_between_tags
 from django.utils.text import Truncator
@@ -28,6 +28,7 @@ from .models import (
 from .utils import (update_module_enrollment_progress, client, get_feedback_list, course_set_attrs, get_status_dict,
     count_user_score, update_modules_graduation, choose_closest_session)
 from .signals import edmodule_enrolled
+from functools import reduce
 
 
 @login_required
@@ -113,8 +114,8 @@ def module_page(request, code):
     return render(request, 'edmodule/edmodule_page.html', {
         'object': module,
         'courses': [course_set_attrs(i) for i in module.courses.all()],
-        'authors': u', '.join([i.title for i in authors]),
-        'partners': u', '.join([i.title for i in partners]),
+        'authors': ', '.join([i.title for i in authors]),
+        'partners': ', '.join([i.title for i in partners]),
         'authors_and_partners': module.get_authors_and_partners(),
         'profits': module.get_module_profit(),
         'related': module.get_related(),
@@ -126,7 +127,7 @@ def module_page(request, code):
         'start_date': module.get_start_date(),
         'feedback_list': get_feedback_list(module),
         'instructors': module.instructors,
-        'authenticated': request.user.is_authenticated(),
+        'authenticated': request.user.is_authenticated,
         'enrollment_reason': module.get_enrollment_reason_for_user(request.user),
         'first_session': session,
         'first_session_price': price,
@@ -170,10 +171,10 @@ def update_context_with_modules(context, user):
         if session in future:
             module.courses_feature.append((course, session))
 
-    if user.is_authenticated():
+    if user.is_authenticated:
         modules = EducationalModule.objects.filter(educationalmoduleenrollment__user=user).distinct().order_by('title')
         enrollment_reasons = EducationalModuleEnrollmentReason.objects.filter(enrollment__user=user).\
-            order_by('-full_paid').select_related('enrollment__module__id')
+            order_by('-full_paid').select_related('enrollment__module')
         reason_for_module = {}
         for e in enrollment_reasons:
             if e.enrollment.module.id in reason_for_module:
@@ -193,7 +194,7 @@ def update_context_with_modules(context, user):
     obj_enrollments_for_session = defaultdict(list)
     obj_enrollments_for_module = defaultdict(list)
     modules_courses_ids = list(modules.values_list('courses__course_sessions__id', flat=True))
-    modules_courses_ids = filter(lambda x: x, modules_courses_ids)
+    modules_courses_ids = [x for x in modules_courses_ids if x]
     sessions_for_course = defaultdict(list)
     available_sessions_for_course = defaultdict(list)
     for cs in CourseSession.objects.filter(id__in=modules_courses_ids).order_by('datetime_starts'):
@@ -204,8 +205,8 @@ def update_context_with_modules(context, user):
                                Participant.objects.filter(user=user, session__id__in=modules_courses_ids)}
     paid_enrollment_for_session = {i.participant.session.id: i for i in
                                    EnrollmentReason.objects.filter(
-                                       participant__in=participant_for_session.values(),
-                                       session_enrollment_type__mode='verified').select_related('participant__session__id')}
+                                       participant__in=list(participant_for_session.values()),
+                                       session_enrollment_type__mode='verified').select_related('participant__session')}
     honor_mode_for_session = {i.session_id: i for i in
                               SessionEnrollmentType.objects.filter(session__id__in=modules_courses_ids, mode__in=['honor'])}
     verified_mode_for_session = {i.session_id: i for i in
@@ -218,7 +219,7 @@ def update_context_with_modules(context, user):
     update_modules_graduation(user, context['courses_finished'])
     for module in context['modules']:
         all_courses = module.courses.all()
-        module.all_courses = zip(all_courses, [c.next_session for c in all_courses])
+        module.all_courses = list(zip(all_courses, [c.next_session for c in all_courses]))
         for attr in ['courses_current', 'courses_finished', 'courses_feature']:
             setattr(module, attr, [])
         for index, (course, __) in enumerate(module.all_courses, 1):
@@ -236,15 +237,15 @@ def update_context_with_modules(context, user):
                     session.has_honor_mode = True
                 if session.participant:
                     _assign_module_tab(module, session, course)
-                    _remove_duplicates(session, without_duplicates.values())
-    all_courses = reduce(lambda x, y: x + y, without_duplicates.values(), [])
+                    _remove_duplicates(session, list(without_duplicates.values()))
+    all_courses = reduce(lambda x, y: x + y, list(without_duplicates.values()), [])
     without_duplicates['all_courses'] = all_courses
     context.update(without_duplicates)
     context['score'] = count_user_score(user)
     context['count_certificates'] = Participant.objects.filter(user=user, is_graduate=True).count()
     context['count_participant'] = Participant.objects.filter(user=user).count()
     counters = {}
-    for attr in without_duplicates.keys():
+    for attr in list(without_duplicates.keys()):
         counters[attr] = len(context[attr])
         counters[attr] += sum([len(getattr(m, attr)) for m in modules])
     modules = list(modules)
@@ -301,8 +302,8 @@ def update_course_details_context(context, user):
         obj = course_set_attrs(context['object'])
         context.update({
             'object': obj,
-            'authors': u', '.join([i.title for i in authors]),
-            'partners': u', '.join([i.title for i in partners]),
+            'authors': ', '.join([i.title for i in authors]),
+            'partners': ', '.join([i.title for i in partners]),
             'authors_and_partners': authors + partners,
             'profits': [i.strip() for i in profits.splitlines() if i.strip()],
             'schedule': course_extended.themes,
@@ -349,7 +350,7 @@ def update_frontpage_context(context, request):
         by_category_dpo[c.id] = list(CourseExtendedParameters.objects.filter(
             categories=c, is_dpo=True, course__id__in=course_ids).values_list('course__id', flat=True))
 
-    for c, ids in by_category.iteritems():
+    for c, ids in by_category.items():
         if len(objects) >= CNT_COURSES:
             break
         modules = EducationalModule.objects.filter(
@@ -380,7 +381,7 @@ def update_frontpage_context(context, request):
 
 
     objects_dpo, objects_dpo_ids = [], []
-    for c, ids in by_category_dpo.iteritems():
+    for c, ids in by_category_dpo.items():
         if len(objects_dpo) > CNT_COURSES:
             break
         modules = EducationalModule.objects.filter(
@@ -422,7 +423,7 @@ def edmodule_filter_view(request):
     filters = {
         'university_slug': lambda x, cs: cs.filter(university__slug__in=x)
     }
-    for k in request.GET.keys():
+    for k in list(request.GET.keys()):
         if k in filters:
             fn = filters[k]
             courses = fn(request.GET.getlist(k), courses)
