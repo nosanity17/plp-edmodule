@@ -6,7 +6,7 @@ import random
 import logging
 from collections import defaultdict
 from django.conf import settings
-from django.db.models import Count
+from django.db.models import Count, Q, Sum
 from django.contrib.contenttypes.models import ContentType
 from django.core.files.storage import default_storage
 from django.http import JsonResponse, Http404
@@ -20,7 +20,9 @@ from django.utils.text import Truncator
 from django.views.decorators.cache import cache_page
 from plp.models import HonorCode, CourseSession, Course, Participant, EnrollmentReason, SessionEnrollmentType, Instructor
 from plp.utils.edx_enrollment import EDXEnrollmentError
-from plp.views.course import _enroll
+from plp.views.course import _enroll, CoursePage as CoursePageBase
+from plp.views.frontpage import Index as IndexBase
+from plp.views.student import Cabinet as CabinetBase
 from plp_extension.apps.course_extension.models import CourseExtendedParameters, Category, CourseCreator
 from .models import (
     EducationalModule, EducationalModuleEnrollment, PUBLISHED, HIDDEN, EducationalModuleEnrollmentReason,
@@ -150,6 +152,13 @@ def get_honor_text(request):
     return JsonResponse({'honor_text': honor_text})
 
 
+class Cabinet(CabinetBase):
+    def get_context_data(self, **kwargs):
+        data = super().get_context_data(**kwargs)
+        update_context_with_modules(data, self.request.user)
+        return data
+
+
 def update_context_with_modules(context, user):
     """
     Добавление в контекст модулей с доступными для записи сессиями и информацией по записи пользователя на них,
@@ -257,6 +266,15 @@ def update_context_with_modules(context, user):
     })
 
 
+class CoursePage(CoursePageBase):
+    template_name = 'edmodule/course_details.html'
+
+    def get_context_data(self, **kwargs):
+        data = super().get_context_data(**kwargs)
+        update_course_details_context(data, self.request.user)
+        return data
+
+
 def update_course_details_context(context, user):
     """
     в контекст страницы курса добавляются параметры:
@@ -322,6 +340,13 @@ def get_promoted_courses(limit=None, sp=None):
     """
     items = []
     return items
+
+
+class Index(IndexBase):
+    def _get_context_data(self, **kwargs):
+        data = super()._get_context_data(**kwargs)
+        update_frontpage_context(data, self.request)
+        return data
 
 
 def update_frontpage_context(context, request):
@@ -468,14 +493,14 @@ def edmodule_catalog_view(request, category=None):
     try:
         all_course_covers = default_storage.listdir(cover_path)[1]
     except OSError:
-        all_course_covers = None
+        all_course_covers = []
     cover_path = EducationalModule._meta.get_field('cover').upload_to
     try:
         all_module_covers = default_storage.listdir(cover_path)[1]
     except OSError:
-        all_module_covers = None
+        all_module_covers = []
 
-    through_model = CourseExtendedParameters._meta.get_field('categories').rel.through
+    through_model = CourseExtendedParameters._meta.get_field('categories').remote_field.through
     category_for_course = defaultdict(list)
     q = through_model.objects.values_list('courseextendedparameters__course__id', 'category__slug')
     for course, category in q:

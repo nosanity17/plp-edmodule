@@ -14,11 +14,10 @@ from django.utils import timezone
 from django.utils.translation import ugettext as _
 from raven import Client
 from plp.utils.edx_enrollment import EDXEnrollment, EDXNotAvailable, EDXCommunicationError, EDXEnrollmentError
-from plp.utils.rudate import STARTED, SCHEDULED
 from plp.models import CourseSession, Participant
 from plp_extension.apps.course_extension.models import CourseExtendedParameters
 from plp_extension.apps.module_extension.models import EducationalModuleExtendedParameters
-from .models import PromoCode, EducationalModuleProgress, EducationalModuleRating, EducationalModule, EducationalModuleEnrollment
+from .models import PromoCode, EducationalModuleProgress, EducationalModule, EducationalModuleEnrollment
 
 RAVEN_CONFIG = getattr(settings, 'RAVEN_CONFIG', {})
 client = None
@@ -28,6 +27,10 @@ if RAVEN_CONFIG:
 
 REQUEST_TIMEOUT = 10
 DEFAULT_PROMOCODE_LENGTH = 6
+STARTED = 'started'
+SCHEDULED = 'scheduled'
+ENDED = 'ended'
+
 
 class EDXTimeoutError(EDXEnrollmentError):
     pass
@@ -125,14 +128,9 @@ def update_module_enrollment_progress(enrollment):
 
 
 def get_feedback_list(module):
-    filter_dict = {
-        'content_type': ContentType.objects.get_for_model(module),
-        'object_id': module.id,
-        'status': 'published',
-        'declined': False,
-    }
-    rating_list = EducationalModuleRating.objects.filter(**filter_dict).order_by('-updated_at')[:2]
-    return rating_list
+    if getattr(settings, 'ENABLE_EDMODULE_RATING', False):
+        from plp_extension.apps.edmodule_review.utils import get_edmodule_feedback_list
+        return get_edmodule_feedback_list(module)
 
 
 def get_status_dict(session):

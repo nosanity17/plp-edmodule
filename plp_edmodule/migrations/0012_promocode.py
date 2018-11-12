@@ -7,7 +7,7 @@ from django.db import models, migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('plp', '0073_merge'),
+        ('plp', '0001_squashed_0244_merge'),
         ('plp_edmodule', '0011_auto_20170502_1443'),
     ]
 

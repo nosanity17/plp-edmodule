@@ -18,8 +18,6 @@ from imagekit.processors import Resize
 from datetime import datetime
 from decimal import Decimal
 from plp.models import Course, User, SessionEnrollmentType, Participant, CourseSession, EnrollmentReason
-from plp_extension.apps.course_review.models import AbstractRating
-from plp_extension.apps.course_review.signals import course_rating_updated_or_created, update_mean_ratings
 from plp_extension.apps.module_extension.models import DEFAULT_COVER_SIZE
 from plp_extension.apps.course_extension.models import CourseExtendedParameters
 from .signals import edmodule_enrolled, edmodule_enrolled_handler, edmodule_payed, edmodule_payed_handler, \
@@ -434,12 +432,6 @@ class EducationalModuleUnsubscribe(models.Model):
         unique_together = ('user', 'module')
 
 
-class EducationalModuleRating(AbstractRating):
-    class Meta:
-        verbose_name = _('Отзыв о модуле')
-        verbose_name_plural = _('Отзывы о модуле')
-
-
 class EducationalModuleEnrollmentType(models.Model):
     EDX_MODES = (
         ('audit', 'audit'),
@@ -672,4 +664,3 @@ class PromoCode(models.Model):
 edmodule_enrolled.connect(edmodule_enrolled_handler, sender=EducationalModuleEnrollment)
 edmodule_unenrolled.connect(edmodule_unenrolled_handler, sender=EducationalModuleEnrollment)
 edmodule_payed.connect(edmodule_payed_handler, sender=EducationalModuleEnrollmentReason)
-course_rating_updated_or_created.connect(update_mean_ratings)

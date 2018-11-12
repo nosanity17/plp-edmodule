@@ -4,9 +4,8 @@ from django import template
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from plp.models import Participant, EnrollmentReason, CourseSession
-from plp.utils.rudate import STARTED, ENDED
 from ..models import EducationalModuleEnrollmentReason, EducationalModuleEnrollment
-from ..utils import course_set_attrs
+from ..utils import course_set_attrs, STARTED, ENDED
 
 register = template.Library()
 
@@ -82,3 +81,12 @@ def split_text(value, splitter=None):
     if splitter is None:
         return [i.strip() for i in value.splitlines() if i.strip()]
     return [i.strip() for i in value.split(splitter) if i.strip()]
+
+
+@register.simple_tag
+def session_status(session, course=None):
+    if session:
+        return session.course_status()
+    if course:
+        return course.course_status()
+    return {}
