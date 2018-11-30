@@ -6,15 +6,12 @@ from django.contrib.admin.actions import delete_selected as delete_selected_orig
 from django.contrib.admin.utils import quote
 from django.contrib.contenttypes.admin import GenericStackedInline
 from django.http import HttpResponseRedirect
-from django.core.urlresolvers import reverse
 from django import forms
+from django.urls import reverse
 from django.utils.translation import ugettext_lazy as _, ungettext_lazy
-from autocomplete_light import modelform_factory
 from statistics.admin import RemoveDeleteActionMixin
-from plp.utils.webhook import ZapierInformer
 from plp_extension.apps.course_extension.models import CourseExtendedParameters
 from plp_extension.apps.module_extension.admin import EducationalModuleExtendedInline
-from opro_payments.admin_forms import UpsaleFormCheckerMixin
 from .utils import generate_promocode
 from .models import (
     EducationalModule,
@@ -45,7 +42,7 @@ class EducationalModuleAdminForm(forms.ModelForm):
             if proj:
                 for p in proj:
                     if EducationalModule.objects.filter(courses=p.course).count() > 0:
-                        raise forms.ValidationError(_(u'Проект {title} уже содержится в другом модуле').format(
+                        raise forms.ValidationError(_('Проект {title} уже содержится в другом модуле').format(
                             title=p.course.title
                         ))
         return courses
@@ -53,7 +50,7 @@ class EducationalModuleAdminForm(forms.ModelForm):
     def clean_subtitle(self):
         val = self.cleaned_data.get('subtitle')
         if val and not (1 <= len([i for i in val.splitlines() if i.strip()]) <= 3):
-            raise forms.ValidationError(_(u'Введите от 1 до 3 элементов, каждый с новой строки'))
+            raise forms.ValidationError(_('Введите от 1 до 3 элементов, каждый с новой строки'))
         return val
 
 
@@ -65,12 +62,10 @@ class EducationalModuleAdmin(RemoveDeleteActionMixin, admin.ModelAdmin):
 
 class EducationalModuleEnrollmentAdmin(admin.ModelAdmin):
     list_display = ('user', 'module', 'is_active')
-    form = modelform_factory(EducationalModuleEnrollment, exclude=[])
+    raw_id_fields = ('user', 'module')
 
     def save_model(self, request, obj, form, change):
         super(EducationalModuleEnrollmentAdmin, self).save_model(request, obj, form, change)
-        ZapierInformer().push(ZapierInformer.ACTION.plp_admin_edmodule_enroll, user=obj.user, module=obj.module)
-
 
 class EducationalModuleEnrollmentReasonAdmin(admin.ModelAdmin):
     search_fields = ('enrollment__user__username', 'enrollment__user__email')
@@ -79,11 +74,9 @@ class EducationalModuleEnrollmentReasonAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         super(EducationalModuleEnrollmentReasonAdmin, self).save_model(request, obj, form, change)
-        ZapierInformer().push(ZapierInformer.ACTION.plp_admin_edmodule_enrollreason, user=obj.enrollment.user,
-                              module=obj.module_enrollment_type.module)
 
 
-class BenefitForm(UpsaleFormCheckerMixin, forms.ModelForm):
+class BenefitForm(forms.ModelForm):
     def clean_icon(self):
         return self._check_image('icon', max_file_size=1, types=['PNG'], max_size=(1000, 1000))
 
@@ -101,15 +94,15 @@ class BenefitAdmin(admin.ModelAdmin):
         titles = {i.id: i.title for i in queryset}
         msg_parts = []
         for i, objs in groupby(linked_objs, lambda x: x.benefit_id):
-            msg_part = [u'%s #%s' % (link.content_type.model_class()._meta.verbose_name, link.object_id)
+            msg_part = ['%s #%s' % (link.content_type.model_class()._meta.verbose_name, link.object_id)
                         for link in objs]
-            msg_parts.append(u'%s: %s' % (titles[i], u', '.join(msg_part)))
+            msg_parts.append('%s: %s' % (titles[i], ', '.join(msg_part)))
         if msg_parts:
             msg = ungettext_lazy(
-                u'Нельзя удалить выбранный объект, имеются связи: %s',
-                u'Нельзя удалить выбранные объекты, имеются связи: %s',
+                'Нельзя удалить выбранный объект, имеются связи: %s',
+                'Нельзя удалить выбранные объекты, имеются связи: %s',
                 len(msg_parts)
-            ) % u'; '.join(msg_parts)
+            ) % '; '.join(msg_parts)
             self.message_user(request, msg)
             return False
         return True
@@ -138,8 +131,7 @@ class BenefitAdmin(admin.ModelAdmin):
 
 
 class CoursePromotionAdmin(admin.ModelAdmin):
-    list_display = ('sort', 'content_type', 'object_id', 'content_object', 'spec_project')
-    list_filter = ('spec_project', )
+    list_display = ('sort', 'content_type', 'object_id', 'content_object')
 
 
 class PromoCodeForm(forms.ModelForm):

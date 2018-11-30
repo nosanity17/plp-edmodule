@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 from django.db import models, migrations
 
@@ -7,7 +7,7 @@ from django.db import models, migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('plp', '0073_merge'),
+        ('plp', '0001_squashed_0244_merge'),
         ('plp_edmodule', '0011_auto_20170502_1443'),
     ]
 
@@ -24,8 +24,8 @@ class Migration(migrations.Migration):
                 ('use_with_others', models.BooleanField(default=True, verbose_name='\u041f\u0440\u0438\u043c\u0435\u043d\u044f\u0435\u0442\u0441\u044f \u0441 \u0434\u0440\u0443\u0433\u0438\u043c\u0438 \u0441\u043a\u0438\u0434\u043a\u0430\u043c\u0438')),
                 ('discount_percent', models.DecimalField(null=True, verbose_name='\u041f\u0440\u043e\u0446\u0435\u043d\u0442 \u0441\u043a\u0438\u0434\u043a\u0438', max_digits=5, decimal_places=2, blank=True)),
                 ('discount_price', models.DecimalField(null=True, verbose_name='\u041d\u043e\u0432\u0430\u044f \u0441\u0442\u043e\u0438\u043c\u043e\u0441\u0442\u044c \u043a\u0443\u0440\u0441\u0430', max_digits=8, decimal_places=2, blank=True)),
-                ('course', models.ForeignKey(related_name='course', verbose_name='\u041a\u0443\u0440\u0441', blank=True, to='plp.Course', null=True)),
-                ('edmodule', models.ForeignKey(related_name='edmodule', verbose_name='\u0421\u043f\u0435\u0446\u0438\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044f', blank=True, to='plp_edmodule.EducationalModule', null=True)),
+                ('course', models.ForeignKey(related_name='course', verbose_name='\u041a\u0443\u0440\u0441', blank=True, to='plp.Course', null=True, on_delete=models.CASCADE)),
+                ('edmodule', models.ForeignKey(related_name='edmodule', verbose_name='\u0421\u043f\u0435\u0446\u0438\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044f', blank=True, to='plp_edmodule.EducationalModule', null=True, on_delete=models.CASCADE)),
             ],
             options={
                 'verbose_name': '\u041f\u0440\u043e\u043c\u043e\u043a\u043e\u0434',

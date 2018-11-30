@@ -9,17 +9,15 @@ from collections import defaultdict
 from django.db.models import Count, Sum
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import ugettext as _
 from raven import Client
 from plp.utils.edx_enrollment import EDXEnrollment, EDXNotAvailable, EDXCommunicationError, EDXEnrollmentError
-from plp.utils.rudate import STARTED, SCHEDULED
 from plp.models import CourseSession, Participant
 from plp_extension.apps.course_extension.models import CourseExtendedParameters
 from plp_extension.apps.module_extension.models import EducationalModuleExtendedParameters
-from plp_eduplanner.models import CourseComp, Competence
-from .models import PromoCode, EducationalModuleProgress, EducationalModuleRating, EducationalModule, EducationalModuleEnrollment
+from .models import PromoCode, EducationalModuleProgress, EducationalModule, EducationalModuleEnrollment
 
 RAVEN_CONFIG = getattr(settings, 'RAVEN_CONFIG', {})
 client = None
@@ -29,6 +27,10 @@ if RAVEN_CONFIG:
 
 REQUEST_TIMEOUT = 10
 DEFAULT_PROMOCODE_LENGTH = 6
+STARTED = 'started'
+SCHEDULED = 'scheduled'
+ENDED = 'ended'
+
 
 class EDXTimeoutError(EDXEnrollmentError):
     pass
@@ -111,7 +113,7 @@ def update_module_enrollment_progress(enrollment):
     try:
         data = EDXEnrollmentExtension().get_courses_progress(enrollment.user.username, course_ids).json()
         now = timezone.now().strftime('%H:%M:%S %Y-%m-%d')
-        for k, v in data.iteritems():
+        for k, v in data.items():
             v['updated_at'] = now
         try:
             progress = EducationalModuleProgress.objects.get(enrollment=enrollment)
@@ -126,14 +128,9 @@ def update_module_enrollment_progress(enrollment):
 
 
 def get_feedback_list(module):
-    filter_dict = {
-        'content_type': ContentType.objects.get_for_model(module),
-        'object_id': module.id,
-        'status': 'published',
-        'declined': False,
-    }
-    rating_list = EducationalModuleRating.objects.filter(**filter_dict).order_by('-updated_at')[:2]
-    return rating_list
+    if getattr(settings, 'ENABLE_EDMODULE_RATING', False):
+        from plp_extension.apps.edmodule_review.utils import get_edmodule_feedback_list
+        return get_edmodule_feedback_list(module)
 
 
 def get_status_dict(session):
@@ -141,35 +138,35 @@ def get_status_dict(session):
     Статус сессии для отрисовки в шаблоне
     """
     months = {
-        1: _(u'января'),
-        2: _(u'февраля'),
-        3: _(u'марта'),
-        4: _(u'апреля'),
-        5: _(u'мая'),
-        6: _(u'июня'),
-        7: _(u'июля'),
-        8: _(u'августа'),
-        9: _(u'сенятбря'),
-        10: _(u'октября'),
-        11: _(u'ноября'),
-        12: _(u'декабря'),
+        1: _('января'),
+        2: _('февраля'),
+        3: _('марта'),
+        4: _('апреля'),
+        5: _('мая'),
+        6: _('июня'),
+        7: _('июля'),
+        8: _('августа'),
+        9: _('сенятбря'),
+        10: _('октября'),
+        11: _('ноября'),
+        12: _('декабря'),
     }
     if session:
         status = session.course_status()
         d = {'status': status['code']}
         if status['code'] == SCHEDULED:
-            starts = timezone.localtime(session.get_start_datetime()).date()
+            starts = timezone.localtime(session.datetime_starts).date()
             d['days_before_start'] = (starts - timezone.now().date()).days
-            d['date'] = session.get_start_datetime().strftime('%d.%m.%Y')
+            d['date'] = session.datetime_starts.strftime('%d.%m.%Y')
             day, month = starts.day, months.get(starts.month)
-            d['date_words'] = _(u'начало {day} {month}').format(day=day, month=month)
+            d['date_words'] = _('начало {day} {month}').format(day=day, month=month)
         elif status['code'] == STARTED:
-            ends = timezone.localtime(session.get_datetime_end_enroll())
+            ends = timezone.localtime(session.datetime_end_enroll)
             d['date'] = ends.strftime('%d.%m.%Y')
             day, month = ends.day, months.get(ends.month)
-            d['date_words'] = _(u'запись до {day} {month}').format(day=day, month=month)
-        if session.get_datetime_end_enroll():
-            d['days_to_enroll'] = (session.get_datetime_end_enroll().date() - timezone.now().date()).days
+            d['date_words'] = _('запись до {day} {month}').format(day=day, month=month)
+        if session.datetime_end_enroll:
+            d['days_to_enroll'] = (session.datetime_end_enroll.date() - timezone.now().date()).days
         return d
     else:
         return {'status': ''}
@@ -178,9 +175,9 @@ def get_status_dict(session):
 def choose_closest_session(c):
     sessions = c.course_sessions.all()
     if sessions:
-        sessions = filter(lambda x: x.get_datetime_end_enroll() and x.get_datetime_end_enroll() > timezone.now()
-                                and x.get_start_datetime(), sessions)
-        sessions = sorted(sessions, key=lambda x: x.get_datetime_end_enroll())
+        sessions = [x for x in sessions if x.datetime_end_enroll and x.datetime_end_enroll > timezone.now()
+                                and x.datetime_starts]
+        sessions = sorted(sessions, key=lambda x: x.datetime_end_enroll)
         if sessions:
             return sessions[0]
     return None
@@ -227,18 +224,7 @@ def course_set_attrs(instance):
             return []
 
     def _get_comps(self):
-        comps = CourseComp.objects.filter(course__id=self.id).select_related('comp')
-        children = defaultdict(list)
-        for i in comps.filter(comp__level=2):
-            children[i.comp.parent_id].append(i.comp)
         result = []
-        for item in Competence.objects.filter(id__in=children.keys()).annotate(children_count=Count('children')):
-            ch = [child.title for child in children.get(item.id, [])]
-            result.append({
-                'title': item.title,
-                'children': ch,
-                'percent': int(round(float(len(ch)) / item.children_count, 2) * 100),
-            })
         return result
 
     def _get_course_format_list(self):
@@ -256,7 +242,7 @@ def course_set_attrs(instance):
         'get_course_format_list': _get_course_format_list,
     }
 
-    for name, method in new_methods.iteritems():
+    for name, method in new_methods.items():
         setattr(instance, name, types.MethodType(method, instance))
 
     try:
@@ -277,12 +263,12 @@ def button_status_project(session, user):
     """
     хелпер для использования в CourseSession.button_status
     """
-    status = {'code': 'project_button', 'active': False, 'is_authenticated': user.is_authenticated()}
+    status = {'code': 'project_button', 'active': False, 'is_authenticated': user.is_authenticated}
     containing_module = EducationalModule.objects.filter(courses__id=session.course.id).first()
     if containing_module:
         may_enroll = containing_module.may_enroll_on_project(user)
-        text = _(u'Запись на проект в рамках <a href="{link}">модуля</a> доступна при успешном '
-                 u'прохождении всех курсов модуля').format(
+        text = _('Запись на проект в рамках <a href="{link}">модуля</a> доступна при успешном '
+                 'прохождении всех курсов модуля').format(
                 link=reverse('edmodule-page', kwargs={'code': containing_module.code}))
         status.update({'text': text, 'active': may_enroll})
     return status
@@ -301,7 +287,7 @@ def update_modules_graduation(user, sessions):
         if getattr(s, 'certificate_data', None) and s.certificate_data.get('passed'):
             passed_courses.add(s.course_id)
     to_update = []
-    for m_id, courses in not_passed_modules.iteritems():
+    for m_id, courses in not_passed_modules.items():
         if courses.issubset(passed_courses):
             to_update.append(m_id)
     EducationalModuleEnrollment.objects.filter(user=user, id__in=to_update).update(is_graduated=True)

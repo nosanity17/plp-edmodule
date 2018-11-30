@@ -4,9 +4,8 @@ from django import template
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from plp.models import Participant, EnrollmentReason, CourseSession
-from plp.utils.rudate import STARTED, ENDED
 from ..models import EducationalModuleEnrollmentReason, EducationalModuleEnrollment
-from ..utils import course_set_attrs
+from ..utils import course_set_attrs, STARTED, ENDED
 
 register = template.Library()
 
@@ -22,7 +21,7 @@ def enroll_button(context, course, session=None, html_location=None):
     отрисовка кнопки записи для курса
     """
     user = context['request'].user
-    authenticated = user.is_authenticated()
+    authenticated = user.is_authenticated
     if not session:
         session = course.next_session
     status = session.button_status(user) if session else course.button_status(user)
@@ -50,22 +49,8 @@ def enroll_button(context, course, session=None, html_location=None):
     else:
         has_paid = False
         has_module = False
-    if getattr(settings, 'ENABLE_OPRO_PAYMENTS', False) and session:
-        from opro_payments.models import UpsaleLink, ObjectEnrollment
-        if not hasattr(session, 'upsales'):
-            session.upsales = UpsaleLink.objects.filter(
-                content_type=course_session_content_type,
-                object_id=session.id,
-                is_active=True
-            )
-        if not hasattr(session, 'bought_upsales') and authenticated:
-            session.bought_upsales = ObjectEnrollment.objects.filter(
-                user__id=user.id,
-                upsale__in=session.upsales,
-                is_active=True
-            ).select_related('upsale')
     if session:
-        materials_available = session.course_status(user=user)['code'] in [STARTED, ENDED] and session.access_allowed()
+        materials_available = session.course_status()['code'] in [STARTED, ENDED] and session.access_allowed()
     else:
         materials_available = False
     return {
@@ -96,3 +81,12 @@ def split_text(value, splitter=None):
     if splitter is None:
         return [i.strip() for i in value.splitlines() if i.strip()]
     return [i.strip() for i in value.split(splitter) if i.strip()]
+
+
+@register.simple_tag
+def session_status(session, course=None):
+    if session:
+        return session.course_status()
+    if course:
+        return course.course_status()
+    return {}
