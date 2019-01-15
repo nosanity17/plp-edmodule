@@ -9,7 +9,7 @@ from django.core import validators
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.utils import timezone
-from django.utils.functional import cached_property
+from django.utils.functional import cached_property, SimpleLazyObject
 from django.utils.translation import ugettext_lazy as _
 from jsonfield import JSONField
 from sortedm2m.fields import SortedManyToManyField
@@ -171,19 +171,18 @@ class EducationalModule(models.Model):
         """
         получение похожих курсов и специализаций (от 0 до 2)
         """
-        from .utils import course_set_attrs
         categories = self.categories
         if not categories:
             return []
         modules = EducationalModule.objects.exclude(id=self.id).filter(
             courses__extended_params__categories__in=categories,status='published').distinct()
-        courses = Course.objects.exclude(id__in=self.courses.values_list('id', flat=True)).filter(
+        courses = EdmoduleCourse.objects.exclude(id__in=self.courses.values_list('id', flat=True)).filter(
             extended_params__categories__in=categories,status='published').distinct()
         related = []
         if modules:
-            related.append({'type': 'em', 'item': random.sample(modules, 1)[0]})
+            related.append({'type': 'em', 'item': random.sample(list(modules), 1)[0]})
         if courses:
-            sample = [course_set_attrs(i) for i in random.sample(courses, min(len(courses), 2))]
+            sample = random.sample(list(courses), min(len(courses), 2))
             for i in range(2 - len(related)):
                 try:
                     related.append({'type': 'course', 'item': sample[i]})
@@ -659,6 +658,67 @@ class PromoCode(models.Model):
                 'status': 0,
                 'new_price': new_price.quantize(Decimal('.00'))
             }  
+
+
+def _string_splitter(obj, attr):
+    try:
+        s = getattr(obj, attr)
+        if s and isinstance(s, str):
+            return [i.strip() for i in s.splitlines() if i.strip()]
+    except AttributeError:
+        pass
+    return []
+
+
+edmodule_course_additional_fields = SimpleLazyObject(
+    lambda: [f.name for f in CourseExtendedParameters._meta.fields if not f.auto_created and f.editable])
+
+
+class EdmoduleCourse(Course):
+    class Meta:
+        proxy = True
+
+    def __getattribute__(self, item):
+        if item in edmodule_course_additional_fields:
+            return getattr(self.extended_params, item)
+        return super().__getattribute__(item)
+
+    def get_next_session(self):
+        from plp_edmodule.utils import choose_closest_session
+        return choose_closest_session(self)
+
+    def course_status_params(self):
+        from plp_edmodule.utils import get_status_dict
+        session = self.get_next_session()
+        if not session:
+            return self.course_status()
+        return get_status_dict(self.get_next_session())
+
+    def get_requirements(self):
+        return _string_splitter(self, 'requirements')
+
+    def get_profit(self):
+        return _string_splitter(self, 'profit')
+
+    def get_documents(self):
+        return _string_splitter(self, 'documents')
+
+    def get_authors_and_partners(self):
+        try:
+            extended = self.extended_params
+            result = []
+            for i in list(extended.authors.all()) + list(extended.partners.all()):
+                if i not in result:
+                    result.append(i)
+            return result
+        except CourseExtendedParameters.DoesNotExist:
+            return []
+
+    def get_competencies(self):
+        return []
+
+    def get_course_format_list(self):
+        return _string_splitter(self, 'course_format')
 
 
 edmodule_enrolled.connect(edmodule_enrolled_handler, sender=EducationalModuleEnrollment)
