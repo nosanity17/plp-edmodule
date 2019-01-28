@@ -191,7 +191,10 @@ def course_set_attrs(instance):
         return choose_closest_session(self)
 
     def _get_course_status_params(self):
-        return get_status_dict(self.get_next_session())
+        session = self.get_next_session()
+        if not session:
+            return self.course_status()
+        return get_status_dict(session)
 
     def _get_requirements(self):
         return _string_splitter(self, 'requirements')
