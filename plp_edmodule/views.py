@@ -543,8 +543,7 @@ def edmodule_catalog_view(request, category=None):
             'short_description': getattr(c, 'short_description', '') or Truncator(default_desc).chars(max_length),
             'categories': category_for_course.get(c.id, []),
         })
-        session = choose_closest_session(c)
-        dic.update({'course_status_params': get_status_dict(session)})
+        dic.update({'course_status_params': c.course_status_params()})
         courses[c.id] = dic
 
     count_courses_dict = dict(EducationalModule.objects.annotate(cnt=Count('courses')).values_list('code', 'cnt'))
