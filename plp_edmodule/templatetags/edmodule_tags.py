@@ -4,8 +4,8 @@ from django import template
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from plp.models import Participant, EnrollmentReason, CourseSession
-from ..models import EducationalModuleEnrollmentReason, EducationalModuleEnrollment
-from ..utils import course_set_attrs, STARTED, ENDED
+from ..models import EducationalModuleEnrollmentReason, EducationalModuleEnrollment, EdmoduleCourse
+from ..utils import STARTED, ENDED
 
 register = template.Library()
 
@@ -53,6 +53,8 @@ def enroll_button(context, course, session=None, html_location=None):
         materials_available = session.course_status()['code'] in [STARTED, ENDED] and session.access_allowed()
     else:
         materials_available = False
+    if course._meta.model is not EdmoduleCourse:
+        course = EdmoduleCourse.objects.get(id=course.id)
     return {
         'status': status,
         'session': session,
@@ -63,7 +65,7 @@ def enroll_button(context, course, session=None, html_location=None):
         'course_id': session.get_absolute_slug() if session else course.course_id(),
         'title': course.title,
         'request': context['request'],
-        'course': course_set_attrs(course),
+        'course': course,
         'has_paid': has_paid,
         'has_module': has_module,
         'materials_available': materials_available,

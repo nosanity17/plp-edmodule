@@ -6,7 +6,8 @@ import random
 import logging
 from collections import defaultdict
 from django.conf import settings
-from django.db.models import Count, Q, Sum
+from django.core.cache import cache
+from django.db.models import Count, Q, Sum, TextField
 from django.contrib.contenttypes.models import ContentType
 from django.core.files.storage import default_storage
 from django.http import JsonResponse, Http404
@@ -26,8 +27,8 @@ from plp.views.student import Cabinet as CabinetBase
 from plp_extension.apps.course_extension.models import CourseExtendedParameters, Category, CourseCreator
 from .models import (
     EducationalModule, EducationalModuleEnrollment, PUBLISHED, HIDDEN, EducationalModuleEnrollmentReason,
-    BenefitLink, CoursePromotion)
-from .utils import (update_module_enrollment_progress, client, get_feedback_list, course_set_attrs, get_status_dict,
+    BenefitLink, CoursePromotion, EdmoduleCourse)
+from .utils import (update_module_enrollment_progress, client, get_feedback_list, get_status_dict,
     count_user_score, update_modules_graduation, choose_closest_session)
 from .signals import edmodule_enrolled
 from functools import reduce
@@ -115,7 +116,7 @@ def module_page(request, code):
         session, price = None, None
     return render(request, 'edmodule/edmodule_page.html', {
         'object': module,
-        'courses': [course_set_attrs(i) for i in module.courses.all()],
+        'courses': EdmoduleCourse.objects.filter(id__in=module.courses.all()),
         'authors': ', '.join([i.title for i in authors]),
         'partners': ', '.join([i.title for i in partners]),
         'authors_and_partners': module.get_authors_and_partners(),
@@ -292,32 +293,36 @@ def update_course_details_context(context, user):
     modules = EducationalModule.objects.filter(courses=context['object']).distinct()
     context['modules'] = modules
     session = context['session']
+    obj = EdmoduleCourse.objects.get(id=context['object'].id)
     try:
-        course_extended = context['object'].extended_params
+        course_extended = obj.extended_params
         authors = list(course_extended.authors.all())
         partners = list(course_extended.partners.all())
         profits = course_extended.profit or ''
-        categories = course_extended.categories.all()
-        related = []
-        if categories:
-            modules = EducationalModule.objects.filter(
-                courses__extended_params__categories__in=categories,status='published').distinct()
-            courses = Course.objects.exclude(id=context['object'].id).filter(
-                extended_params__categories__in=categories,status='published').distinct()
-            if modules:
-                related = [
-                    {'type': 'em', 'item': random.sample(modules, 1)[0]},
-                ]
-            if courses:
-                if len(courses) > 1 and len(related):
-                    sample = [course_set_attrs(i) for i in random.sample(courses, 2)]
+        related_key = 'EdmoduleCourseRelated:%s' % obj.id
+        related = cache.get(related_key)
+        if related is None:
+            related = []
+            categories = course_extended.categories.all()
+            if categories:
+                modules = EducationalModule.objects.filter(
+                    courses__extended_params__categories__in=categories,status='published').distinct()
+                courses = EdmoduleCourse.objects.exclude(id=context['object'].id).filter(
+                    extended_params__categories__in=categories,status='published').distinct()
+                if modules:
                     related = [
-                        {'type': 'course', 'item': sample[0]},
-                        {'type': 'course', 'item': sample[1]}
+                        {'type': 'em', 'item': random.sample(list(modules), 1)[0]},
                     ]
-                else:
-                    related.append({'type': 'course', 'item': course_set_attrs(courses[0])})
-        obj = course_set_attrs(context['object'])
+                if courses:
+                    if len(courses) > 1 and len(related):
+                        sample = random.sample(list(courses), 2)
+                        related = [
+                            {'type': 'course', 'item': sample[0]},
+                            {'type': 'course', 'item': sample[1]}
+                        ]
+                    else:
+                        related.append({'type': 'course', 'item': courses[0]})
+            cache.set(related_key, related, timeout=settings.PAGE_CACHE_TIME)
         context.update({
             'object': obj,
             'authors': ', '.join([i.title for i in authors]),
@@ -362,6 +367,7 @@ def update_frontpage_context(context, request):
             item['type'],
             item['item'].id
         ))
+    exclude_course_fields = [i.name for i in Course._meta.fields if isinstance(i, TextField)]
     now = timezone.now()
     course_ids = CourseSession.objects.filter(
         course__status=PUBLISHED,
@@ -371,9 +377,7 @@ def update_frontpage_context(context, request):
     by_category, by_category_dpo = {}, {}
     for c in Category.objects.all():
         by_category[c.id] = list(CourseExtendedParameters.objects.filter(
-            categories=c, is_dpo=False, course__id__in=course_ids).values_list('course__id', flat=True))
-        by_category_dpo[c.id] = list(CourseExtendedParameters.objects.filter(
-            categories=c, is_dpo=True, course__id__in=course_ids).values_list('course__id', flat=True))
+            categories=c, course__id__in=course_ids).values_list('course__id', flat=True))
 
     for c, ids in by_category.items():
         if len(objects) >= CNT_COURSES:
@@ -392,45 +396,21 @@ def update_frontpage_context(context, request):
         if added_module:
             continue
         added = [i[1] for i in objects_ids if i[0] == 'course']
-        c = Course.objects.filter(id__in=ids).exclude(id__in=added).first()
+        c = EdmoduleCourse.objects.filter(id__in=ids).exclude(id__in=added).defer(*exclude_course_fields).first()
         if c and ('course', c.id) not in objects_ids:
-            objects.append({'type': 'course', 'item': course_set_attrs(c)})
+            objects.append({'type': 'course', 'item': c})
             objects_ids.append(('course', c.id))
     num_to_add = CNT_COURSES - len(objects)
     # добавляем рандомные курсы
     if num_to_add:
         added = [i[1] for i in objects_ids]
-        qs = Course.objects.filter(status=PUBLISHED).exclude(id__in=added)
+        qs = EdmoduleCourse.objects.filter(status=PUBLISHED).exclude(id__in=added).defer(*exclude_course_fields)
         for c in qs.order_by('?')[:num_to_add]:
-            objects.append({'type': 'course', 'item': course_set_attrs(c)})
-
-
-    objects_dpo, objects_dpo_ids = [], []
-    for c, ids in by_category_dpo.items():
-        if len(objects_dpo) > CNT_COURSES:
-            break
-        modules = EducationalModule.objects.filter(
-            status=PUBLISHED,
-            courses__in=ids,
-        ).prefetch_related('courses')
-        added_module = False
-        for m in modules:
-            if m.may_enroll() and ('em', m.id) not in objects_dpo_ids:
-                objects_dpo.append({'type': 'em', 'item': m})
-                objects_dpo_ids.append(('em', m.id))
-                added_module = True
-                break
-        if added_module:
-            continue
-        added = [i[1] for i in objects_dpo_ids if i[0] == 'course']
-        c = Course.objects.filter(id__in=ids).exclude(id__in=added).first()
-        if c and ('course', c.id) not in objects_dpo_ids:
-            objects_dpo.append({'type': 'course', 'item': course_set_attrs(c)})
-            objects_dpo_ids.append(('course', c.id))
+            objects.append({'type': 'course', 'item': c})
 
     context.update({
         'objects': objects,
-        'objects_dpo': objects_dpo,
+        'objects_dpo': [],
     })
 
 
@@ -461,7 +441,6 @@ def edmodule_filter_view(request):
     return JsonResponse(result)
 
 
-@cache_page(settings.PAGE_CACHE_TIME)
 def edmodule_catalog_view(request, category=None):
     """
     Передаваемый контекст:
@@ -486,6 +465,11 @@ def edmodule_catalog_view(request, category=None):
     course_covers: словарь, ключ - id курса, значение - объект картинки курса
     module_covers: аналогично course_covers
     """
+    cache_key = "EdmoduleCourseCatalogContext"
+    context = cache.get(cache_key)
+    if context:
+        return render(request, 'edmodule/catalog.html', context)
+
     sp = None
 
     courses, modules, course_covers, module_covers = {}, {}, {}, {}
@@ -507,7 +491,7 @@ def edmodule_catalog_view(request, category=None):
         category_for_course[course].append(category)
 
     category_slugs_with_having_courses = set()
-    courses_query = Course.objects.filter(status='published').prefetch_related(
+    courses_query = EdmoduleCourse.objects.filter(status='published').prefetch_related(
         'extended_params', 'extended_params__authors', 'course_sessions').distinct()
     # if not category:
     #     courses_query = Course.objects.filter(status='published').prefetch_related(
@@ -531,7 +515,6 @@ def edmodule_catalog_view(request, category=None):
             'course_status_params': '',
             'url': reverse('course_details', kwargs={'uni_slug': c.university.slug, 'slug': c.slug}),
         }
-        c = course_set_attrs(c)
         max_length = CourseExtendedParameters._meta.get_field('short_description').max_length
         default_desc = strip_tags(strip_spaces_between_tags(c.description or ''))
         dic.update({
@@ -585,6 +568,7 @@ def edmodule_catalog_view(request, category=None):
         'course_covers': course_covers,
         'module_covers': module_covers,
     }
+    cache.set(cache_key, context, timeout=settings.PAGE_CACHE_TIME)
     return render(request, 'edmodule/catalog.html', context)
 
 
@@ -652,8 +636,8 @@ def organization_view(request, code):
     if org.status == CourseCreator.STATUS_CHOICES.HIDDEN:
         raise Http404
 
-    all_courses = [course_set_attrs(i) for i in
-                   Course.objects.filter(Q(extended_params__authors=org) | Q(extended_params__partners=org)).distinct()]
+    all_courses = list(EdmoduleCourse.objects.filter(Q(extended_params__authors=org) |
+                                                     Q(extended_params__partners=org)).distinct())
     courses = [i.id for i in all_courses]
     courses_info = Course.objects.filter(id__in=courses).aggregate(sum=Sum('sum_ratings'), count=Sum('count_ratings'))
     if courses_info['count']:
@@ -676,7 +660,7 @@ def organization_view(request, code):
         except:
             pass
 
-    courses_by_popularity = list(Course.objects.filter(id__in=courses).annotate(
+    courses_by_popularity = list(EdmoduleCourse.objects.filter(id__in=courses).annotate(
         cnt=Count('course_sessions__course_participant')).filter(cnt__gt=0).order_by('-cnt'))
     popular = []
     if courses_by_popularity:
@@ -687,7 +671,7 @@ def organization_view(request, code):
                     courses_by_popularity.pop(pos)
                     break
         for course in courses_by_popularity[:3]:
-            popular.append({'type': 'course', 'item': course_set_attrs(course)})
+            popular.append({'type': 'course', 'item': course})
         popular = popular[:3]
 
     context = {
