@@ -84,9 +84,16 @@ class EducationalModule(models.Model):
         work = 0
         for c, s in self.courses_with_closest_sessions:
             if s:
-                w = (s.get_duration() or 0) * (s.get_workload() or 0)
+                min_workload, max_workload = s.get_workload_from(), s.get_workload_to
+                if min_workload is not None and max_workload is not None:
+                    w = (s.get_duration() or 0) * int((s.get_workload_from() + s.get_workload_to()) / 2)
+                else:
+                    w = 0
             else:
-                w = (c.duration or 0) * (c.workload or 0)
+                if c.workload_from is not None and c.workload_to is not None:
+                    w = (c.duration or 0) * int((c.workload_from + c.workload_to) / 2)
+                else:
+                    w = 0
             if not w:
                 return 0
             work += w
